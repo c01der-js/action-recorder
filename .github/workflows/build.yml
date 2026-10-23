@@ -1,0 +1,58 @@
+name: Build recorder.exe
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build
+        run: |
+          $common = @("--onefile", "--collect-all", "uiautomation",
+                      "--hidden-import", "pynput.keyboard._win32",
+                      "--hidden-import", "pynput.mouse._win32")
+          pyinstaller @common --noconsole --name recorder recorder.py
+          pyinstaller @common --console --name recorder-console recorder.py
+
+      - name: Self-test of the built exe
+        run: |
+          .\dist\recorder-console.exe --selftest selftest.json
+          $code = $LASTEXITCODE
+          Get-Content selftest.json
+          if ($code -ne 0) { throw "selftest failed with exit code $code (missing module in the build)" }
+
+      - name: Package
+        run: |
+          New-Item -ItemType Directory -Force ActionRecorder | Out-Null
+          Copy-Item dist\recorder.exe, dist\recorder-console.exe, start_recorder.bat, README.md, selftest.json ActionRecorder\
+          Compress-Archive -Path ActionRecorder\* -DestinationPath ActionRecorder.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ActionRecorder
+          path: ActionRecorder\*
+          retention-days: 30
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ActionRecorder.zip

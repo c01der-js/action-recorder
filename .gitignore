@@ -1,0 +1,7 @@
+sessions/
+.venv/
+build/
+dist/
+*.spec
+__pycache__/
+selftest.json
